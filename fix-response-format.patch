@@ -1,0 +1,31 @@
+  formatResponse(content, source, sessionId) {
+    const timestamp = new Date().toISOString();
+    let formatted = '';
+    
+    if (typeof content === 'string') {
+      formatted = content;
+    } else if (content && content.message) {
+      // Full message content
+      formatted = content.message;
+      
+      // Add DQL suggestions if available
+      if (content.dqlSuggestions && content.dqlSuggestions.length > 0) {
+        formatted += '\n\n**💡 Suggested DQL Queries:**\n';
+        content.dqlSuggestions.forEach(dql => {
+          formatted += `\`${dql}\`\n`;
+        });
+      }
+      
+      // Add next steps if available
+      if (content.nextSteps && content.nextSteps.length > 0) {
+        formatted += '\n\n**🎯 Next Steps:**\n';
+        content.nextSteps.forEach((step, i) => {
+          formatted += `${i + 1}. ${step}\n`;
+        });
+      }
+    } else {
+      formatted = JSON.stringify(content, null, 2);
+    }
+    
+    return `${formatted}\n\n_Source: ${source} | ${timestamp}_`;
+  }

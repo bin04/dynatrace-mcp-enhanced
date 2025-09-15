@@ -5,7 +5,7 @@ export class OllamaClient {
     this.config = {
       baseUrl: config.baseUrl || 'http://localhost:11434',
       model: config.model || 'llama2',
-      timeout: config.timeout || 120000, // Increased to 2 minutes
+      timeout: config.timeout || 120000, // 2 minutes
       maxRetries: config.maxRetries || 3,
       ...config
     };
@@ -70,7 +70,7 @@ export class OllamaClient {
           top_k: 40,
           // Add performance options for Phi
           num_ctx: 2048,     // Context window
-          num_predict: 512   // Max tokens to generate
+          num_predict: 1024   // Max tokens to generate
         }
       };
 
@@ -119,12 +119,17 @@ export class OllamaClient {
 
     // Add context if available
     if (context) {
-      prompt += `Context: You are assisting with technical questions about software architecture, observability, and system design.\n\n`;
-      
-      if (context.currentTopic) {
-        prompt += `Current topic: ${context.currentTopic}\n`;
+      if (context.currentTopic === 'dynatrace') {
+        prompt += 'You are an expert Dynatrace consultant and observability specialist.\n\n';
+        if (context.instructions) {
+          prompt += `${context.instructions}\n\n`;
+        }
+      } else {
+        prompt += 'Context: You are assisting with technical questions about software architecture, observability, and system design.\n\n';
+        if (context.currentTopic) {
+          prompt += `Current topic: ${context.currentTopic}\n`;
+        }
       }
-      
       prompt += '\n';
     }
 
@@ -132,7 +137,11 @@ export class OllamaClient {
     prompt += `Question: ${message}\n\n`;
     
     // Add guidance for the response
-    prompt += `Please provide a concise, helpful technical response. Focus on practical information and avoid overly verbose explanations.`;
+    if (context && context.currentTopic === 'dynatrace') {
+      prompt += 'Please provide a detailed, technical response about Dynatrace and observability. Include specific actionable advice where relevant.';
+    } else {
+      prompt += 'Please provide a concise, helpful technical response. Focus on practical information and avoid overly verbose explanations.';
+    }
 
     return prompt;
   }

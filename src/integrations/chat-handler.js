@@ -1,5 +1,6 @@
 import { KnowledgeBase } from './knowledge-base.js';
 import { OllamaClient } from './ollama-client.js';
+import { DynatraceMCPBridge } from "./dynatrace-mcp-bridge.js";
 
 export class ChatHandler {
   constructor({ redis, dynatraceConfig, ollamaConfig, mcpTools = null }) {
@@ -10,6 +11,7 @@ export class ChatHandler {
     // Initialize sub-components
     this.knowledgeBase = new KnowledgeBase();
     this.ollama = new OllamaClient(ollamaConfig);
+    this.dynatraceMCP = new DynatraceMCPBridge(dynatraceConfig);  // <- This was missing!
     
     // Store reference to actual MCP tools
     this.mcpTools = mcpTools;
@@ -17,7 +19,6 @@ export class ChatHandler {
 
   async handleMessage(message, sessionId) {
     try {
-      // Determine the type of request and route accordingly
       const requestType = this.classifyRequest(message);
       console.log(`🧠 Request classified as: ${requestType}`);
 
@@ -47,19 +48,12 @@ export class ChatHandler {
     const msg = message.toLowerCase();
     console.log(`🔍 DEBUG: Classifying "${message}"`);
 
-    // Dynatrace-specific queries
+    // Dynatrace-specific queries - EXECUTE with API!
     if (msg.includes('dql') || msg.includes('fetch') || msg.includes('problems') || 
         msg.includes('vulnerabilities') || msg.includes('entities') || 
         msg.includes('logs') || msg.includes('metrics') || msg.includes('dynatrace')) {
-      console.log(`🔍 DEBUG: -> dynatrace_query`);
+      console.log(`🔍 DEBUG: -> dynatrace_query (execute with API)`);
       return 'dynatrace_query';
-    }
-
-    // General troubleshooting and observability questions
-    if (msg.includes('troubleshoot') || msg.includes('investigate') || 
-        msg.includes('correlate') || msg.includes('methodology')) {
-      console.log(`🔍 DEBUG: -> knowledge_query`);
-      return 'knowledge_query';
     }
 
     // General conversational queries (for Ollama)
@@ -67,6 +61,13 @@ export class ChatHandler {
         msg.includes('help me') || msg.startsWith('can you')) {
       console.log(`🔍 DEBUG: -> ollama_chat`);
       return 'ollama_chat';
+    }
+
+    // General troubleshooting and observability questions
+    if (msg.includes('troubleshoot') || msg.includes('investigate') || 
+        msg.includes('correlate') || msg.includes('methodology')) {
+      console.log(`🔍 DEBUG: -> knowledge_query`);
+      return 'knowledge_query';
     }
 
     // Help and guidance
@@ -86,61 +87,68 @@ export class ChatHandler {
       return this.formatResponse(cached, 'cache', sessionId);
     }
 
-    let result;
-    
     try {
-      console.log(`🔍 Attempting real Dynatrace query: ${message}`);
+      console.log(`🔍 Executing REAL Dynatrace API query: ${message}`);
       
-      // Create a simulated response that looks like we're calling real tools
-      // but includes instructions on how to connect actual tools
-      result = {
-        message: `🔍 **Real Dynatrace Integration Needed**
+      // Step 1: Execute the actual Dynatrace API call
+      const apiResult = await this.dynatraceMCP.executeQuery(message);
+      
+      // Step 2: Get Phi3 to analyze the results (only if we got real data)
+      let combinedResponse;
+      if (apiResult.realData) {
+        try {
+          const phi3Context = this.buildDynatraceAnalysisContext(message, apiResult);
+          const phi3Analysis = await this.ollama.chat(
+            `Analyze these Dynatrace results: ${message}`, 
+            phi3Context
+          );
+          
+          combinedResponse = {
+            apiResults: apiResult,
+            phi3Analysis: phi3Analysis,
+            message: `${apiResult.message}\n\n---\n\n**🤖 AI Analysis:**\n${phi3Analysis.message}`,
+            timestamp: new Date().toISOString()
+          };
+        } catch (phi3Error) {
+          console.log(`🔄 Phi3 analysis failed, returning API results only`);
+          combinedResponse = apiResult;
+        }
+      } else {
+        // Just return the API result (might be auth error, etc.)
+        combinedResponse = apiResult;
+      }
+      
+      // Cache the result
+      await this.redis.cacheDynatraceQuery(message, combinedResponse);
 
-Your query: "${message}"
-
-**To get actual Dynatrace data, we need to connect the real MCP tools.**
-
-**What you'd get with real connection:**
-- Live problems from your Dynatrace environment
-- Real DQL query execution  
-- Actual vulnerability data
-- Current system health status
-
-**Quick test:** Try asking me \`show environment info\` to see if basic Dynatrace connection works.
-
-**For now, here's what your query would typically return:**
-- If "problems": Recent incidents and alerts
-- If "vulnerabilities": Security issues requiring attention  
-- If "logs": Application and infrastructure logs
-- If DQL: Direct query results
-
-💡 **Next step:** Connect this enhanced server to your existing Dynatrace MCP session.`,
-        queryType: 'real_integration_needed',
-        suggestion: 'Try: show environment info',
-        timestamp: new Date().toISOString()
-      };
+      return this.formatResponse(combinedResponse, 'dynatrace-working-api', sessionId);
       
     } catch (error) {
-      console.error(`❌ Dynatrace integration error:`, error);
-      result = {
-        message: `❌ **Dynatrace Integration Error**
-
-Error: ${error.message}
-
-**Fallback:** This enhanced server needs to be connected to your existing Dynatrace MCP session to provide real data.
-
-**For now, you can:**
-- Use the original Dynatrace MCP directly
-- Ask general questions (routed to Ollama)
-- Get troubleshooting guidance`,
-        timestamp: new Date().toISOString()
-      };
+      console.error(`❌ Dynatrace API execution error:`, error);
+      
+      // Fallback to Phi3 explanation only
+      console.log(`🔄 API failed, providing Phi3 explanation only`);
+      return this.handleOllamaChat(message, sessionId);
     }
+  }
 
-    // Cache the result
-    await this.redis.cacheDynatraceQuery(message, result);
+  buildDynatraceAnalysisContext(message, apiResult) {
+    return {
+      currentTopic: 'dynatrace',
+      expertiseArea: 'observability',
+      apiData: apiResult,
+      instructions: `You are analyzing real Dynatrace API results. The user asked: "${message}".
 
-    return this.formatResponse(result, 'integration_pending', sessionId);
+The API returned: ${JSON.stringify(apiResult, null, 2)}
+
+Please provide:
+- Analysis of what the results mean
+- Any patterns or issues identified  
+- Recommended next steps based on the data
+- Additional queries that might be helpful
+
+Keep the explanation practical and actionable.`
+    };
   }
 
   async handleKnowledgeQuery(message, sessionId) {
@@ -150,11 +158,11 @@ Error: ${error.message}
 
   async handleOllamaChat(message, sessionId) {
     try {
-      console.log(`🦙 Routing to Ollama: ${message}`);
+      console.log(`🦙 Routing to Phi3 for general chat: ${message}`);
       const ollamaResponse = await this.ollama.chat(message);
-      return this.formatResponse(ollamaResponse, 'ollama', sessionId);
+      return this.formatResponse(ollamaResponse, 'phi3-general', sessionId);
     } catch (error) {
-      console.log(`🔄 Ollama unavailable (${error.message}), falling back to knowledge base`);
+      console.log(`🔄 Phi3 unavailable (${error.message}), falling back to knowledge base`);
       return this.handleKnowledgeQuery(message, sessionId);
     }
   }
@@ -168,71 +176,70 @@ Error: ${error.message}
     return this.handleGeneralHelp(message, sessionId);
   }
 
-  extractDQLFromMessage(message) {
-    // Extract DQL if explicitly provided
-    const dqlMatch = message.match(/(?:dql|fetch)\s+(.+)/i);
-    return dqlMatch ? dqlMatch[1] : null;
-  }
-
   generateHelpResponse(message) {
     return {
       message: `👋 **Enhanced Dynatrace MCP Assistant**
 
-**✅ Currently Working:**
-🦙 **Ollama Integration** - Ask me to explain concepts
-📊 **Knowledge Base** - General troubleshooting guidance  
-📦 **Redis Caching** - Fast response times
-💬 **Modern Chat UI** - This interface you're using
+**🚀 NOW WITH REAL API INTEGRATION!**
 
-**🔧 Integration Needed:**
-🔍 **Real Dynatrace Data** - Connect to your MCP session for live data
+🔍 **Dynatrace Queries** → Live API + AI Analysis
+- "Are there any current problems?" → Real API call + Phi3 analysis
+- "fetch dt.davis.problems" → Execute DQL + interpretation  
+- "Show me error logs" → Live data + pattern analysis
 
-**Try these working features:**
-- "explain microservices" → Ollama (Phi3)
-- "troubleshooting methodology" → Knowledge base
-- "how does kubernetes work" → Ollama
-- "correlation strategies" → Knowledge base
+💬 **General Questions** → Phi3 AI
+- "Explain distributed systems"
+- "How does Kubernetes work?"
 
-**🎯 Test Dynatrace connection:**
-- "show environment info" 
-- "any current problems"
+📊 **Troubleshooting** → Knowledge Base
+- "Investigation methodology"
+- "Best practices"
 
-**Working great:** General explanations and troubleshooting guidance
-**Next step:** Connect real Dynatrace MCP tools for live data`,
+**✨ What's Working:**
+- 🎯 **Real API Calls** to ${this.dynatraceMCP?.environmentUrl || 'Dynatrace'}
+- 🤖 **AI Analysis** of live results
+- 📦 **Redis Caching** for performance
+
+**Try these working queries:**
+- "Are there any current problems?"
+- "Show me recent vulnerabilities"  
+- "What's the environment status?"`,
       suggestions: [
-        "explain distributed systems",
-        "how does observability work",
-        "troubleshooting methodology",
-        "what is kubernetes"
+        "Are there any current problems?",
+        "What's the environment status?",
+        "Show me vulnerabilities",
+        "Execute fetch dt.davis.problems"
       ]
     };
   }
 
   formatResponse(content, source, sessionId) {
     const timestamp = new Date().toISOString();
+    let formatted = '';
     
     if (typeof content === 'string') {
-      return `${content}\n\n_Source: ${source} | ${timestamp}_`;
+      formatted = content;
+    } else if (content && content.message) {
+      formatted = content.message;
+    } else {
+      formatted = JSON.stringify(content, null, 2);
     }
     
-    if (content.message) {
-      return `${content.message}\n\n_Source: ${source} | ${timestamp}_`;
-    }
-    
-    return `${JSON.stringify(content, null, 2)}\n\n_Source: ${source} | ${timestamp}_`;
+    return `${formatted}\n\n_Source: ${source} | ${timestamp}_`;
   }
 
   formatErrorResponse(error) {
     return `❌ **Error occurred**: ${error.message}
 
-**What's working:**
-- Ollama chat (explain, what is, how do)
-- Knowledge base (troubleshooting, methodology)
-- Redis caching
+**Available features:**
+- 🎯 Dynatrace API integration
+- 🤖 AI analysis and explanation  
+- 📦 Redis caching for performance
 
 **Try:**
-- "explain microservices"
-- "troubleshooting methodology"
+- "Are there any problems?"
+- "Explain microservices"
+- "What's the environment status?"
 
 Need help? Try asking: "help"`;
   }

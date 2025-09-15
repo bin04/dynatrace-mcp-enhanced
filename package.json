@@ -10,17 +10,25 @@
     "test": "jest"
   },
   "dependencies": {
-    "redis": "^4.6.0", 
-    "express": "^4.18.0",
-    "ws": "^8.14.0",
+    "@dynatrace-oss/dynatrace-mcp-server": "^0.5.0",
     "axios": "^1.6.0",
-    "dotenv": "^16.3.0"
+    "dotenv": "^16.3.0",
+    "express": "^4.18.0",
+    "redis": "^4.6.0",
+    "ws": "^8.14.0"
   },
   "devDependencies": {
     "jest": "^29.0.0",
     "nodemon": "^3.0.0"
   },
-  "keywords": ["dynatrace", "mcp", "redis", "chat", "ollama", "observability"],
+  "keywords": [
+    "dynatrace",
+    "mcp",
+    "redis",
+    "chat",
+    "ollama",
+    "observability"
+  ],
   "author": "rbeatty",
   "license": "MIT"
 }
