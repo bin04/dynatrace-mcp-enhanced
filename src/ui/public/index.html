@@ -1,0 +1,547 @@
+<!-- public/index.html -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dynatrace MCP Chatbot</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="container">
+      <div class="header">
+        <h1>🔍 Dynatrace MCP Assistant</h1>
+        <p>Connected to your Redis-enabled MCP service</p>
+        <div class="status" id="connectionStatus">
+          <span class="status-indicator" id="statusIndicator">●</span>
+          <span id="statusText">Checking connection...</span>
+        </div>
+      </div>
+
+      <div class="chat-container">
+        <div class="messages" id="messages">
+          <div class="message assistant-message">
+            👋 Hey there! I'm connected to your Dynatrace environment and ready to help with investigations.
+            <br /><br />
+            Try asking me about:
+            <ul>
+              <li>🚨 Recent problems or alerts</li>
+              <li>🛡️ Security vulnerabilities</li>
+              <li>🔍 Entity searches</li>
+              <li>📊 Custom DQL queries</li>
+              <li>🏗️ ADT system architecture questions</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="input-area">
+          <input
+            type="text"
+            id="messageInput"
+            placeholder="Ask me about Dynatrace problems, DQL queries, or ADT systems..."
+            maxlength="1000"
+            autocomplete="off"
+          />
+          <button id="sendButton" onclick="sendMessage()">
+            <span id="buttonText">Send</span>
+            <span id="loadingSpinner" class="spinner" style="display: none">⟳</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="footer">
+        <small>
+          Dynatrace MCP Server |
+          <a href="/api/info" target="_blank">API Info</a> |
+          <a href="/health" target="_blank">Health Check</a>
+        </small>
+      </div>
+    </div>
+
+    <script src="chat.js"></script>
+  </body>
+</html>
+
+<!-- ==================== -->
+<!-- public/styles.css -->
+<style>
+  :root {
+    --bg-primary: #1a1a1a;
+    --bg-secondary: #2a2a2a;
+    --bg-tertiary: #333;
+    --text-primary: #e0e0e0;
+    --text-secondary: #aaa;
+    --accent-green: #4caf50;
+    --accent-blue: #0066cc;
+    --accent-orange: #ff9800;
+    --accent-red: #f44336;
+    --border-color: #555;
+    --shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'SF Pro Display', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    margin: 0;
+    padding: 20px;
+    min-height: 100vh;
+    line-height: 1.5;
+  }
+
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    height: 90vh;
+    min-height: 600px;
+  }
+
+  .header {
+    text-align: center;
+    margin-bottom: 20px;
+    padding: 20px;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+  }
+
+  .header h1 {
+    color: var(--accent-green);
+    margin: 0 0 10px 0;
+    font-size: 28px;
+    font-weight: 600;
+  }
+
+  .header p {
+    margin: 0 0 15px 0;
+    color: var(--text-secondary);
+    font-size: 16px;
+  }
+
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    background: var(--bg-primary);
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .status-indicator {
+    font-size: 12px;
+    animation: pulse 2s infinite;
+  }
+
+  .status.connected .status-indicator {
+    color: var(--accent-green);
+  }
+  .status.disconnected .status-indicator {
+    color: var(--accent-red);
+  }
+  .status.checking .status-indicator {
+    color: var(--accent-orange);
+  }
+
+  @keyframes pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  .chat-container {
+    flex: 1;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    margin-bottom: 20px;
+    padding: 15px;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+  }
+
+  .message {
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    border-radius: 12px;
+    max-width: 85%;
+    word-wrap: break-word;
+    animation: fadeIn 0.3s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .user-message {
+    background: var(--accent-blue);
+    margin-left: auto;
+    text-align: right;
+    color: white;
+  }
+
+  .assistant-message {
+    background: var(--bg-tertiary);
+    margin-right: auto;
+    border-left: 3px solid var(--accent-green);
+  }
+
+  .system-message {
+    background: var(--bg-tertiary);
+    margin: 0 auto;
+    text-align: center;
+    font-style: italic;
+    max-width: 70%;
+    color: var(--text-secondary);
+    border: 1px solid var(--border-color);
+  }
+
+  .message ul {
+    margin: 8px 0;
+    padding-left: 20px;
+  }
+
+  .message ul li {
+    margin: 4px 0;
+  }
+
+  .input-area {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+
+  .input-area input {
+    flex: 1;
+    padding: 14px 18px;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 25px;
+    color: var(--text-primary);
+    font-size: 16px;
+    outline: none;
+    transition: border-color 0.2s ease;
+  }
+
+  .input-area input:focus {
+    border-color: var(--accent-green);
+  }
+
+  .input-area button {
+    padding: 14px 24px;
+    background: var(--accent-green);
+    color: white;
+    border: none;
+    border-radius: 25px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 16px;
+    min-width: 80px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .input-area button:hover:not(:disabled) {
+    background: #45a049;
+    transform: translateY(-1px);
+  }
+
+  .input-area button:disabled {
+    background: var(--border-color);
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .spinner {
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  .footer {
+    text-align: center;
+    margin-top: 15px;
+    padding: 10px;
+    color: var(--text-secondary);
+    font-size: 14px;
+  }
+
+  .footer a {
+    color: var(--accent-green);
+    text-decoration: none;
+  }
+
+  .footer a:hover {
+    text-decoration: underline;
+  }
+
+  pre {
+    background: var(--bg-primary);
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+    border: 1px solid var(--border-color);
+    margin: 8px 0;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-size: 14px;
+  }
+
+  code {
+    background: var(--bg-primary);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+    font-size: 14px;
+  }
+
+  /* Responsive design */
+  @media (max-width: 768px) {
+    body {
+      padding: 10px;
+    }
+
+    .container {
+      height: 95vh;
+    }
+
+    .header h1 {
+      font-size: 24px;
+    }
+
+    .message {
+      max-width: 95%;
+    }
+
+    .input-area {
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .input-area input,
+    .input-area button {
+      width: 100%;
+    }
+  }
+</style>
+
+<!-- ==================== -->
+<!-- public/chat.js -->
+<script>
+  class ChatInterface {
+    constructor() {
+      this.messagesDiv = document.getElementById('messages');
+      this.messageInput = document.getElementById('messageInput');
+      this.sendButton = document.getElementById('sendButton');
+      this.buttonText = document.getElementById('buttonText');
+      this.loadingSpinner = document.getElementById('loadingSpinner');
+      this.statusIndicator = document.getElementById('statusIndicator');
+      this.statusText = document.getElementById('statusText');
+      this.connectionStatus = document.getElementById('connectionStatus');
+
+      this.isLoading = false;
+      this.sessionId = this.generateSessionId();
+
+      this.init();
+    }
+
+    generateSessionId() {
+      return 'web-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    }
+
+    init() {
+      // Event listeners
+      this.messageInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          this.sendMessage();
+        }
+      });
+
+      // Test connection on load
+      this.checkConnection();
+
+      // Focus input
+      this.messageInput.focus();
+
+      // Periodic connection check
+      setInterval(() => this.checkConnection(), 30000);
+    }
+
+    async checkConnection() {
+      try {
+        this.updateStatus('checking', 'Checking connection...');
+
+        const response = await fetch('/health');
+
+        if (response.ok) {
+          const data = await response.json();
+          this.updateStatus('connected', `Connected to ${data.service}`);
+        } else {
+          this.updateStatus('disconnected', `Service error: ${response.status}`);
+        }
+      } catch (error) {
+        this.updateStatus('disconnected', 'Connection failed');
+        console.error('Connection check failed:', error);
+      }
+    }
+
+    updateStatus(status, text) {
+      this.connectionStatus.className = `status ${status}`;
+      this.statusText.textContent = text;
+    }
+
+    addMessage(content, type, timestamp = null) {
+      const messageDiv = document.createElement('div');
+      messageDiv.className = `message ${type}-message`;
+
+      if (type === 'assistant' && content.includes('```')) {
+        messageDiv.innerHTML = this.formatMessage(content);
+      } else {
+        messageDiv.textContent = content;
+      }
+
+      // Add timestamp for debugging if provided
+      if (timestamp && type !== 'system') {
+        const timeSpan = document.createElement('small');
+        timeSpan.style.opacity = '0.6';
+        timeSpan.style.fontSize = '12px';
+        timeSpan.style.display = 'block';
+        timeSpan.style.marginTop = '4px';
+        timeSpan.textContent = new Date(timestamp).toLocaleTimeString();
+        messageDiv.appendChild(timeSpan);
+      }
+
+      this.messagesDiv.appendChild(messageDiv);
+      this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
+    }
+
+    formatMessage(content) {
+      return content
+        .replace(/```(\w+)?\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+        .replace(/\n/g, '<br>');
+    }
+
+    setLoading(loading) {
+      this.isLoading = loading;
+      this.sendButton.disabled = loading;
+
+      if (loading) {
+        this.buttonText.style.display = 'none';
+        this.loadingSpinner.style.display = 'inline';
+      } else {
+        this.buttonText.style.display = 'inline';
+        this.loadingSpinner.style.display = 'none';
+      }
+    }
+
+    async sendMessage() {
+      const message = this.messageInput.value.trim();
+
+      if (!message || this.isLoading) return;
+
+      // Add user message
+      this.addMessage(message, 'user');
+      this.messageInput.value = '';
+
+      // Show loading state
+      this.setLoading(true);
+
+      const loadingDiv = document.createElement('div');
+      loadingDiv.className = 'message assistant-message';
+      loadingDiv.innerHTML = '<em>🤔 Thinking...</em>';
+      this.messagesDiv.appendChild(loadingDiv);
+      this.messagesDiv.scrollTop = this.messagesDiv.scrollHeight;
+
+      try {
+        const response = await fetch('/chat', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: message,
+            session_id: this.sessionId,
+          }),
+        });
+
+        // Remove loading message
+        this.messagesDiv.removeChild(loadingDiv);
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(`HTTP ${response.status}: ${errorData.message || response.statusText}`);
+        }
+
+        const data = await response.json();
+        this.addMessage(data.response || 'No response received', 'assistant', data.timestamp);
+      } catch (error) {
+        // Remove loading message
+        if (this.messagesDiv.contains(loadingDiv)) {
+          this.messagesDiv.removeChild(loadingDiv);
+        }
+
+        this.addMessage(`❌ Error: ${error.message}`, 'system');
+        console.error('Chat error:', error);
+
+        // Update connection status
+        this.updateStatus('disconnected', 'Service unavailable');
+      } finally {
+        this.setLoading(false);
+        this.messageInput.focus();
+      }
+    }
+  }
+
+  // Initialize chat interface when DOM is loaded
+  document.addEventListener('DOMContentLoaded', () => {
+    window.chatInterface = new ChatInterface();
+  });
+
+  // Make sendMessage available globally for the button onclick
+  function sendMessage() {
+    if (window.chatInterface) {
+      window.chatInterface.sendMessage();
+    }
+  }
+</script>
